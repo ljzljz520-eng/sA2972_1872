@@ -3,6 +3,7 @@ package parking
 import (
 	"errors"
 	"math"
+	"sync"
 	"time"
 )
 
@@ -27,6 +28,7 @@ type Verification struct {
 
 type OfflineVerifier struct {
 	library    *CredentialLibrary
+	usedMu     sync.Mutex
 	usedDigest map[string]struct{}
 	rateCents  int
 }
@@ -60,6 +62,14 @@ func (v *OfflineVerifier) Validate(credential Credential, exitTime time.Time, ex
 	if exitTime.Before(registered.EntryTime) {
 		return Verification{State: StateInvalidExitTime, Credential: registered, Digest: digest}
 	}
+	v.usedMu.Lock()
+	if _, used := v.usedDigest[digest]; used {
+		v.usedMu.Unlock()
+		return Verification{State: StateCredentialUsed, Credential: registered, Digest: digest}
+	}
+	v.usedDigest[digest] = struct{}{}
+	v.usedMu.Unlock()
+
 	duration := exitTime.Sub(registered.EntryTime)
 	hours := int(math.Ceil(duration.Hours()))
 	if hours < 1 {
